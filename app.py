@@ -1,15 +1,13 @@
-import os
-os.system("apt-get update && apt-get install -y ffmpeg")
 import streamlit as st
-import whisper
 import google.generativeai as genai
 import edge_tts
 import asyncio
+import os
 import tempfile
 
 # --- 1. Streamlit UI Setup ---
 st.title("🎬 AI Movie Recap Automation")
-st.write("ဒေါင်းလုဒ်ဆွဲထားသော ဗီဒီယို သို့မဟုတ် အသံဖိုင်ကို တိုက်ရိုက်တင်ပြီး Script နှင့် အသံဖိုင်ကို ရယူပါ။")
+st.write("ဗီဒီယိုဖိုင်ကို တိုက်ရိုက်တင်ပြီး Gemini AI ဖြင့် မြန်မာ ဇာတ်ညွှန်းနှင့် အသံဖိုင်ကို ရယူပါ။")
 
 # --- 2. API Key Configuration ---
 st.sidebar.header("⚙️ Settings")
@@ -17,12 +15,13 @@ api_key = st.sidebar.text_input("Gemini API Key ကို ထည့်ပါ:", 
 
 if api_key:
     genai.configure(api_key=api_key)
+    # Gemini 1.5 Flash သည် ဗီဒီယိုဖိုင်များကို တိုက်ရိုက်ဖတ်နိုင်သည်
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     st.sidebar.warning("ကျေးဇူးပြု၍ သင်၏ Gemini API Key ကို ထည့်ပါ။")
 
 # --- 3. Main Interface (File Upload) ---
-uploaded_file = st.file_uploader("ဗီဒီယို သို့မဟုတ် အသံဖိုင် ရွေးချယ်ပါ (Upload):", type=['mp4', 'mov', 'avi', 'mp3', 'wav', 'm4a'])
+uploaded_file = st.file_uploader("ဗီဒီယိုဖိုင် ရွေးချယ်ပါ (MP4, MOV စသည်ဖြင့်):", type=['mp4', 'mov', 'avi', 'mkv'])
 
 async def generate_audio(text, output_file):
     communicate = edge_tts.Communicate(text, "en-US-AriaNeural") 
@@ -30,46 +29,48 @@ async def generate_audio(text, output_file):
 
 if st.button("Generate Script & Voice"):
     if not uploaded_file:
-        st.error("ကျေးဇူးပြု၍ ဗီဒီယို (သို့) အသံဖိုင်တစ်ခုခုကို အရင် Upload တင်ပါ။")
+        st.error("ကျေးဇူးပြု၍ ဗီဒီယိုဖိုင်တစ်ခုခုကို အရင် Upload တင်ပါ။")
     elif not api_key:
         st.error("ကျေးဇူးပြု၍ ဘယ်ဘက်အခြမ်း (Sidebar) တွင် Gemini API Key ကို ထည့်ပါ။")
     else:
-        with st.spinner("လုပ်ငန်းစဉ် စတင်နေပါပြီ... ခဏစောင့်ပါ... ⏳"):
+        with st.spinner("Gemini AI ဖြင့် ဗီဒီယိုကို လေ့လာပြီး ဇာတ်ညွှန်းထုတ်နေပါပြီ... ခဏစောင့်ပါ... ⏳"):
             try:
-                # ဖိုင်ကို ယာယီသိမ်းဆည်းခြင်း
+                # ဗီဒီယိုဖိုင်ကို ယာယီသိမ်းဆည်းခြင်း
                 temp_dir = tempfile.mkdtemp()
-                file_path = os.path.join(temp_dir, uploaded_file.name)
+                video_path = os.path.join(temp_dir, uploaded_file.name)
                 
-                with open(file_path, "wb") as f:
+                with open(video_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 
-                # --- Step 1: Transcribe Audio using Whisper ---
-                st.info("📝 ဗီဒီယိုမှ မူရင်းစာသားကို ရယူနေပါသည် (Whisper AI)...")
-                whisper_model = whisper.load_model("base") 
-                result = whisper_model.transcribe(file_path)
-                original_text = result["text"]
+                st.info("📤 ဗီဒီယိုဖိုင်ကို Gemini AI သို့ ပို့ဆောင်နေပါသည်...")
                 
-                st.success("✅ မူရင်းစာသား ရယူပြီးပါပြီ။")
-                with st.expander("မူရင်းစာသား (Original Transcript) ကို ကြည့်ရန် နှိပ်ပါ"):
-                    st.write(original_text)
+                # Gemini သို့ ဖိုင်တင်ခြင်း (File API)
+                video_file = genai.upload_file(video_path)
+                
+                # ဖိုင်အဆင်သင့်ဖြစ်သည်အထိ စောင့်ဆိုင်းခြင်း
+                import time
+                while video_file.state.name == "PROCESSING":
+                    time.sleep(2)
+                    video_file = genai.get_file(video_file.name)
 
-                # --- Step 2: Generate Recap Script using Gemini ---
-                st.info("✨ Gemini AI ဖြင့် မြန်မာ ဇာတ်ညွှန်း ပြန်လည်ရေးသားနေပါသည်...")
-                prompt = f"""
-                အောက်ပါစာသားသည် ရုပ်ရှင် သို့မဟုတ် ဗီဒီယိုတစ်ခုမှ ထုတ်ယူထားသော မူရင်းစာသား ဖြစ်သည်။ 
-                ယင်းစာသားကို အခြေခံ၍ ဆွဲဆောင်မှုရှိသော၊ စိတ်ဝင်စားဖွယ်ကောင်းသော 'Movie Recap' ဇာတ်ညွှန်းတစ်ခုကို 'မြန်မာဘာသာ' ဖြင့် ပြန်လည်ရေးသားပေးပါ။
-                
-                မူရင်းစာသား:
-                {original_text}
+                if video_file.state.name == "FAILED":
+                    raise Exception("ဗီဒီယိုဖိုင် လုပ်ဆောင်မှု ကျရှုံးသွားပါသည်။")
+
+                # --- Generate Movie Recap Script ---
+                st.info("✨ ဆွဲဆောင်မှုရှိသော မြန်မာ Movie Recap ဇာတ်ညွှန်း ရေးသားနေပါသည်...")
+                prompt = """
+                ဤဗီဒီယိုကို ကြည့်ရှုပြီး ၎င်းပါ ဇာတ်လမ်းအကြောင်းအရာများကို အခြေခံကာ စိတ်ဝင်စားဖွယ်ကောင်းပြီး ဆွဲဆောင်မှုရှိသော 'Movie Recap' ဇာတ်ညွှန်းတစ်ခုကို 'မြန်မာဘာသာ' ဖြင့် ရေးသားပေးပါ။
+                ကြည့်ရှုသူများကို ဖမ်းစားနိုင်မည့် အသုံးအနှုန်းများဖြင့် အပိုင်းလိုက် စနစ်တကျ ဖန်တီးပေးပါ။
                 """
-                response = model.generate_content(prompt)
+                
+                response = model.generate_content([video_file, prompt])
                 myanmar_script = response.text
                 
                 st.success("✅ မြန်မာဇာတ်ညွှန်း ရေးသားပြီးပါပြီ။")
                 st.subheader("📜 သင့်အတွက် AI ရေးပေးသော မြန်မာဇာတ်ညွှန်း")
                 st.write(myanmar_script)
 
-                # --- Step 3: Text-to-Speech using Edge-TTS ---
+                # --- Text-to-Speech using Edge-TTS ---
                 st.info("🔊 မြန်မာဇာတ်ညွှန်းကို အသံဖိုင်အဖြစ် ပြောင်းလဲနေပါသည်...")
                 output_audio_path = os.path.join(temp_dir, "recap_voice.mp3")
                 
