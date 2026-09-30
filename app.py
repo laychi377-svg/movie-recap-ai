@@ -1,9 +1,10 @@
+import os
+os.system("apt-get update && apt-get install -y ffmpeg")
 import streamlit as st
 import whisper
 import google.generativeai as genai
 import edge_tts
 import asyncio
-import os
 import tempfile
 
 # --- 1. Streamlit UI Setup ---
